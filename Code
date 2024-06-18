@@ -1,0 +1,239 @@
+
+# IMPORTANT: RUN THIS CELL IN ORDER TO IMPORT YOUR KAGGLE DATA SOURCES
+# TO THE CORRECT LOCATION (/kaggle/input) IN YOUR NOTEBOOK,
+# THEN FEEL FREE TO DELETE THIS CELL.
+# NOTE: THIS NOTEBOOK ENVIRONMENT DIFFERS FROM KAGGLE'S PYTHON
+# ENVIRONMENT SO THERE MAY BE MISSING LIBRARIES USED BY YOUR
+# NOTEBOOK.
+
+import os
+import sys
+from tempfile import NamedTemporaryFile
+from urllib.request import urlopen
+from urllib.parse import unquote, urlparse
+from urllib.error import HTTPError
+from zipfile import ZipFile
+import tarfile
+import shutil
+
+CHUNK_SIZE = 40960
+DATA_SOURCE_MAPPING = 'trojan-detection:https%3A%2F%2Fstorage.googleapis.com%2Fkaggle-data-sets%2F1596092%2F2625272%2Fbundle%2Farchive.zip%3FX-Goog-Algorithm%3DGOOG4-RSA-SHA256%26X-Goog-Credential%3Dgcp-kaggle-com%2540kaggle-161607.iam.gserviceaccount.com%252F20240610%252Fauto%252Fstorage%252Fgoog4_request%26X-Goog-Date%3D20240610T221434Z%26X-Goog-Expires%3D259200%26X-Goog-SignedHeaders%3Dhost%26X-Goog-Signature%3D54b2ff36ee8da9c0ca22db98b7a4213b75fce11eb3a0340917ef620b9f0b377034491b8b6da372b9e3728ff3d09cc3ceb23755d2186af0c43fef1735c52a8f8fd9ee4e438dd4ca9e6d960c5308ba71a20e44a25b78900b772f26e54389289f1aaa7a195f8ef42efaf35e99865f9c4159824943f6de1561dbf5c1254a97d0ad8cfc07281b94cc5a9b6d0ca872c975d9c472557690d091dbae016c4836e61dd87da75f072b0699ba4e2b86d95f4a6c723cf0683cbeefc77f3654aab40a4c138ddbbd5745f184259ecec638d259e9c5dff5e59a69a063e9b116ad1fc1b5866cde700443c0edb98686d28e08be7a9d1e0a27cae7c2b6eee7e560c74811da93ff51fa'
+
+KAGGLE_INPUT_PATH='/kaggle/input'
+KAGGLE_WORKING_PATH='/kaggle/working'
+KAGGLE_SYMLINK='kaggle'
+
+!umount /kaggle/input/ 2> /dev/null
+shutil.rmtree('/kaggle/input', ignore_errors=True)
+os.makedirs(KAGGLE_INPUT_PATH, 0o777, exist_ok=True)
+os.makedirs(KAGGLE_WORKING_PATH, 0o777, exist_ok=True)
+
+try:
+  os.symlink(KAGGLE_INPUT_PATH, os.path.join("..", 'input'), target_is_directory=True)
+except FileExistsError:
+  pass
+try:
+  os.symlink(KAGGLE_WORKING_PATH, os.path.join("..", 'working'), target_is_directory=True)
+except FileExistsError:
+  pass
+
+for data_source_mapping in DATA_SOURCE_MAPPING.split(','):
+    directory, download_url_encoded = data_source_mapping.split(':')
+    download_url = unquote(download_url_encoded)
+    filename = urlparse(download_url).path
+    destination_path = os.path.join(KAGGLE_INPUT_PATH, directory)
+    try:
+        with urlopen(download_url) as fileres, NamedTemporaryFile() as tfile:
+            total_length = fileres.headers['content-length']
+            print(f'Downloading {directory}, {total_length} bytes compressed')
+            dl = 0
+            data = fileres.read(CHUNK_SIZE)
+            while len(data) > 0:
+                dl += len(data)
+                tfile.write(data)
+                done = int(50 * dl / int(total_length))
+                sys.stdout.write(f"\r[{'=' * done}{' ' * (50-done)}] {dl} bytes downloaded")
+                sys.stdout.flush()
+                data = fileres.read(CHUNK_SIZE)
+            if filename.endswith('.zip'):
+              with ZipFile(tfile) as zfile:
+                zfile.extractall(destination_path)
+            else:
+              with tarfile.open(tfile.name) as tarfile:
+                tarfile.extractall(destination_path)
+            print(f'\nDownloaded and uncompressed: {directory}')
+    except HTTPError as e:
+        print(f'Failed to load (likely expired) {download_url} to path {destination_path}')
+        continue
+    except OSError as e:
+        print(f'Failed to load {download_url} to path {destination_path}')
+        continue
+
+print('Data source import complete.')
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All"
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current sessionimport torch # for PyTorch
+import torch.nn as nn # for the layers and the model building
+import torch.optim as optim # for optimizers
+import torchvision # for datasets and models
+import torchvision.transforms as transforms # for data augmentation
+from torch.utils.data import DataLoader, TensorDataset, random_split # for creating datasets and data loaders
+import numpy as np # for numerical operations
+import matplotlib.pyplot as plt  # for graphing and plotting
+import pandas as pd # for data analysis
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler# DATA
+# Load data
+df = pd.read_csv("../input/trojan-detection/Trojan_Detection.csv", sep=',', skipinitialspace=True)
+df = df.dropna() # drop any values that are not real
+df = df.drop(["Unnamed: 0"], axis=1) # same
+
+# Encode target labels
+df = df.replace("Trojan", 1) # the label is changed from names to 1
+df = df.replace("Benign", 0) # the label is changed from benign to 0
+
+# Encode categorical features
+number = preprocessing.LabelEncoder() # all of these features are being encoded to convert them into suitable inputs for the model
+df["Flow ID"] = number.fit_transform(df["Flow ID"])
+df["Source IP"] = number.fit_transform(df["Source IP"])
+df["Destination IP"] = number.fit_transform(df["Destination IP"])
+df["Timestamp"] = number.fit_transform(df["Timestamp"])
+
+# Split data into predictors (X) and target (y)
+X = df.drop(["Class"], axis=1).values
+y = df["Class"].values
+
+# Split into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0, test_size=0.2)
+
+# Scale features
+scaler = StandardScaler() # the feature values are standardized using
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Verify the number of features
+input_dim = X_train_scaled.shape[1]
+print(f'Number of input features: {input_dim}')
+
+# Convert to PyTorch tensors, these are converted so that supports automatic diffferation
+X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
+y_train_tensor = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+y_test_tensor = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
+
+# Create data loaders
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+# MODEL
+# Define the neural network, multi-layered fully connected model
+class TrojanHorse(nn.Module):
+    def __init__(self, input_dim):
+        super(TrojanHorse, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 128) # matches the number of features
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 64)
+        self.fc4 = nn.Linear(64, 64)
+        self.fc5 = nn.Linear(64, 1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fc4(x))
+        x = self.fc5(x)
+        return x
+
+model = TrojanHorse(input_dim=input_dim)
+criterion = nn.BCEWithLogitsLoss() # type of loss function, combines the sigmoid and BCE together,
+optimizer = optim.Adam(model.parameters(), lr=0.001) # with optimizer
+# Training the model
+num_epochs = 20 # number of training rounds
+train_losses = []
+val_losses = []
+train_accuracies = []
+val_accuracies = []
+
+for epoch in range(num_epochs):
+    model.train() # training mode
+    running_loss = 0.0
+    correct_train = 0
+    total_train = 0
+    for inputs, labels in train_loader: # training loop
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item() * inputs.size(0)
+
+        # Calculate training accuracy
+        predictions = torch.round(torch.sigmoid(outputs))
+        correct_train += (predictions == labels).sum().item()
+        total_train += labels.size(0)
+
+    epoch_loss = running_loss / len(train_loader.dataset)
+    train_losses.append(epoch_loss)
+    train_accuracy = correct_train / total_train
+    train_accuracies.append(train_accuracy)
+
+    # eval mode
+    model.eval()
+    val_loss = 0.0
+    correct_val = 0
+    total_val = 0
+    with torch.no_grad(): # no longer need optimizer so this shuts it off
+        for inputs, labels in test_loader:
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item() * inputs.size(0)
+
+            # Calculate validation accuracy
+            predictions = torch.round(torch.sigmoid(outputs))
+            correct_val += (predictions == labels).sum().item()
+            total_val += labels.size(0)
+
+    val_loss /= len(test_loader.dataset)
+    val_losses.append(val_loss)
+    val_accuracy = correct_val / total_val
+    val_accuracies.append(val_accuracy)
+
+    print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_loss:.4f}, Validation Loss: {val_loss:.4f}, Training Accuracy %{train_accuracy * 100:.2f}, Validation Accuracy %{val_accuracy * 100:.2f}')epochs = range(1, num_epochs + 1)
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(epochs, train_losses, 'y', label='Training loss')
+plt.plot(epochs, val_losses, 'r', label='Validation loss')
+plt.title('Training and validation loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
+# Plotting the training and validation accuracy
+plt.subplot(1, 2, 2)
+plt.plot(epochs, train_accuracies, 'b', label='Training accuracy')
+plt.plot(epochs, val_accuracies, 'g', label='Validation accuracy')
+plt.title('Training and validation accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.show()
